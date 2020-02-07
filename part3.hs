@@ -1,4 +1,5 @@
 import Data.Char (ord, chr, isDigit)
+import Control.Monad.State
 
 data Expr =
     Num Int
@@ -23,48 +24,72 @@ toNum str = foldl (\acc ch -> 10 * acc + (toDigit ch)) 0 str
 isNum str = all isDigit str
 
 parse :: String -> Maybe Expr
-parse str = 
-  case expr $ words str of
+parse str =
+  case runState expr (words str) of
     (x, []) -> Just x
     _ -> Nothing
   where
     -- expr = term
-    expr s = term s
+    expr = term
 
-    -- num = /[0..9]+/
-    num (w : s) | isNum w = (Num $ toNum w, s)
+    -- num = /[0-9]+/
+    num = state $ (\(w:s) -> (Num $ toNum w, s))
 
     -- power = num '^' power | num
-    power s = 
-      let (left, s1) = num s in
-        case s1 of
-        ("^":s2) -> let (right, s3) = power s2 in
-          (Power left right, s3)
-        _ -> (left, s1)
+    power = do
+      left <- num
+      state <- get
+      case state of
+        ("^":xs) -> do
+          put xs
+          right <- power
+          return $ Power left right
+        _ -> do
+          return left
 
-    -- factor = power {'*'|'/' power}
-    factor s =
-      let (left, s1) = power s in
-        loop left s1 where
-          loop left s =
-            case s of
-            ("*":s1) -> let (right, s2) = power s1 in
-              loop (Mul left right) s2
-            ("/":s1) -> let (right, s2) = power s1 in
-              loop (Div left right) s2 
-            _ -> (left, s)
+    -- factor' = {'*'|'/' power}
+    factor' left = do
+      state <- get
+      case state of
+        ("*":xs) -> do
+          put xs
+          right <- power
+          factor' (Mul left right)
+        ("/":xs) -> do
+          put xs
+          right <- power
+          factor' (Div left right)
+        _ ->
+          return left
+
+    -- factor = power factor'
+    factor = do
+      left <- power
+      factor' left
+    
+    term' left = do
+      state <- get
+      case state of
+        ("+":xs) -> do
+          put xs
+          right <- factor
+          term' (Add left right)
+        ("-":xs) -> do
+          put xs
+          right <- factor
+          term' (Sub left right)
+        _ ->
+          return left
 
     -- term = factor {'+'|'-' factor}
-    term s =
-      let (left, s1) = factor s in
-        loop left s1 where
-          loop left s =
-            case s of
-            ("+":s1) -> let (right, s2) = factor s1 in
-              loop (Add left right) s2
-            ("-":s1) -> let (right, s2) = factor s1 in
-              loop (Mul left right) s2 
-            _ -> (left, s)
+    term = do
+      left <- factor
+      term' left
+
+num :: State [String] Expr
+num = state $ (\(w:s) -> (Num $ toNum w, s))
+
+
 
 polish expr = case expr of
   Num x -> show x
