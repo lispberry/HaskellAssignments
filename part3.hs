@@ -67,6 +67,7 @@ parse str =
       left <- power
       factor' left
     
+    -- term' = {'+'|'-' factor}
     term' left = do
       state <- get
       case state of
@@ -81,7 +82,7 @@ parse str =
         _ ->
           return left
 
-    -- term = factor {'+'|'-' factor}
+    -- term = factor term'
     term = do
       left <- factor
       term' left
